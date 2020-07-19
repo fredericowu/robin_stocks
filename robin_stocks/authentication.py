@@ -51,7 +51,7 @@ def respond_to_challenge(challenge_id, sms_code):
     return(helper.request_post(url, payload))
 
 
-def login(username=None, password=None, expiresIn=86400, scope='internal', by_sms=True, store_session=True):
+def login(username=None, password=None, expiresIn=86400, scope='internal', by_sms=True, store_session=True, get_input=True):
     """This function will effectivly log the user into robinhood by getting an
     authentication token and saving it to the session header. By default, it
     will store the authentication token in a pickle file and load that value
@@ -134,17 +134,17 @@ def login(username=None, password=None, expiresIn=86400, scope='internal', by_sm
         else:
             os.remove(pickle_path)
     # Try to log in normally.
-    if not username:
+    if not username and get_input:
         username = input("Robinhood username: ")
         payload['username'] = username
-    if not password:
+    if not password and get_input:
         password = getpass.getpass("Robinhood password: ")
         payload['password'] = password
 
     data = helper.request_post(url, payload)
     # Handle case where mfa or challenge is required.
     if data:
-        if 'mfa_required' in data:
+        if 'mfa_required' in data and get_input:
             mfa_token = input("Please type in the MFA code: ")
             payload['mfa_code'] = mfa_token
             res = helper.request_post(url, payload, jsonify_data=False)
@@ -154,7 +154,7 @@ def login(username=None, password=None, expiresIn=86400, scope='internal', by_sm
                 payload['mfa_code'] = mfa_token
                 res = helper.request_post(url, payload, jsonify_data=False)
             data = res.json()
-        elif 'challenge' in data:
+        elif 'challenge' in data and get_input:
             challenge_id = data['challenge']['id']
             sms_code = input('Enter Robinhood code for validation: ')
             res = respond_to_challenge(challenge_id, sms_code)
