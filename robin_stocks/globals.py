@@ -1,7 +1,5 @@
 """Holds the session header and other global variables."""
 from requests import Session
-import copy
-
 
 # Keeps track on if the user is logged in or not.
 LOGGED_IN = False
@@ -16,6 +14,3 @@ SESSION.headers = {
     "Connection": "keep-alive",
     "User-Agent": "*"
 }
-
-SESSION_ORIGINAL = Session()
-SESSION_ORIGINAL.headers = copy.copy(SESSION.headers)
