@@ -140,14 +140,14 @@ def get_dividends(info=None):
 
 
 @helper.login_required
-def get_total_dividends():
+def get_total_dividends(session):
     """Returns a float number representing the total amount of dividends paid to the account.
 
     :returns: Total dollar amount of dividends paid to the account as a 2 precision float.
 
     """
     url = urls.dividends()
-    data = helper.request_get(url, 'pagination')
+    data = helper.request_get(session, url, 'pagination')
 
     dividend_total = 0
     for item in data:
@@ -298,7 +298,7 @@ def unlink_bank_account(id):
 
 
 @helper.login_required
-def get_bank_transfers(info=None):
+def get_bank_transfers(session, info=None):
     """Returns all bank transfers made for the account.
 
     :param info: Will filter the results to get a specific value. 'direction' gives if it was deposit or withdrawl.
@@ -308,7 +308,7 @@ def get_bank_transfers(info=None):
 
     """
     url = urls.banktransfers()
-    data = helper.request_get(url, 'pagination')
+    data = helper.request_get(session, url, 'pagination')
     return(helper.filter(data, info))
 
 

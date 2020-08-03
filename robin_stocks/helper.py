@@ -228,7 +228,7 @@ def inputs_to_set(inputSymbols):
     return(symbols_list)
 
 
-def request_document(url, payload=None):
+def request_document(session, url, payload=None):
     """Using a document url, makes a get request and returnes the session data.
 
     :param url: The url to send a get request to.
@@ -237,7 +237,7 @@ def request_document(url, payload=None):
 
     """
     try:
-        res = SESSION.get(url, params=payload)
+        res = session.get(url, params=payload)
         res.raise_for_status()
     except requests.exceptions.HTTPError as message:
         print(message)
@@ -246,7 +246,7 @@ def request_document(url, payload=None):
     return(res)
 
 
-def request_get(url, dataType='regular', payload=None, jsonify_data=True):
+def request_get(session, url, dataType='regular', payload=None, jsonify_data=True):
     """For a given url and payload, makes a get request and returns the data.
 
     :param url: The url to send a get request to.
@@ -270,14 +270,14 @@ def request_get(url, dataType='regular', payload=None, jsonify_data=True):
     res = None
     if jsonify_data:
         try:
-            res = SESSION.get(url, params=payload)
+            res = session.get(url, params=payload)
             res.raise_for_status()
             data = res.json()
         except (requests.exceptions.HTTPError, AttributeError) as message:
             print(message)
             return(data)
     else:
-        res = SESSION.get(url, params=payload)
+        res = session.get(url, params=payload)
         return(res)
     # Only continue to filter data if jsonify_data=True, and Session.get returned status code <200>.
     if (dataType == 'results'):
@@ -299,7 +299,7 @@ def request_get(url, dataType='regular', payload=None, jsonify_data=True):
             print('Found Additional pages.')
         while nextData['next']:
             try:
-                res = SESSION.get(nextData['next'])
+                res = session.get(nextData['next'])
                 res.raise_for_status()
                 nextData = res.json()
             except:
@@ -321,7 +321,7 @@ def request_get(url, dataType='regular', payload=None, jsonify_data=True):
     return(data)
 
 
-def request_post(url, payload=None, timeout=16, json=False, jsonify_data=True):
+def request_post(session, url, payload=None, timeout=16, json=False, jsonify_data=True):
     """For a given url and payload, makes a post request and returns the response. Allows for responses other than 200.
 
     :param url: The url to send a post request to.
@@ -342,12 +342,13 @@ def request_post(url, payload=None, timeout=16, json=False, jsonify_data=True):
     try:
         if json:
             update_session('Content-Type', 'application/json')
-            res = SESSION.post(url, json=payload, timeout=timeout)
+            res = session.post(url, json=payload, timeout=timeout)
             update_session(
                 'Content-Type', 'application/x-www-form-urlencoded; charset=utf-8')
         else:
-            res = SESSION.post(url, data=payload, timeout=timeout)
+            res = session.post(url, data=payload, timeout=timeout)
         data = res.json()
+        data["_response_object"] = res
     except Exception as message:
         print("Error in request_post: {0}".format(message))
     # Either return response <200,401,etc.> or the data that is returned from requests.
@@ -357,7 +358,7 @@ def request_post(url, payload=None, timeout=16, json=False, jsonify_data=True):
         return(res)
 
 
-def request_delete(url):
+def request_delete(session, url):
     """For a given url and payload, makes a delete request and returns the response.
 
     :param url: The url to send a delete request to.
@@ -366,7 +367,7 @@ def request_delete(url):
 
     """
     try:
-        res = SESSION.delete(url)
+        res = session.delete(url)
         res.raise_for_status()
         data = res
     except Exception as message:
@@ -376,7 +377,7 @@ def request_delete(url):
     return(data)
 
 
-def update_session(key, value):
+def update_session(session, key, value):
     """Updates the session header used by the requests library.
 
     :param key: The key value to update or add to session header.
@@ -386,7 +387,7 @@ def update_session(key, value):
     :returns: None. Updates the session header with a value.
 
     """
-    SESSION.headers[key] = value
+    session.headers[key] = value
 
 
 def error_argument_not_key_in_dictionary(keyword):

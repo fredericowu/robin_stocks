@@ -3,6 +3,7 @@ import getpass
 import os
 import pickle
 import random
+from requests import Session
 
 import robin_stocks.helper as helper
 import robin_stocks.urls as urls
@@ -34,7 +35,7 @@ def generate_device_token():
     return(id)
 
 
-def respond_to_challenge(challenge_id, sms_code):
+def respond_to_challenge(session, challenge_id, sms_code):
     """This functino will post to the challenge url.
 
     :param challenge_id: The challenge id.
@@ -48,10 +49,18 @@ def respond_to_challenge(challenge_id, sms_code):
     payload = {
         'response': sms_code
     }
-    return(helper.request_post(url, payload))
+    return(helper.request_post(session, url, payload))
 
 
-def login(username=None, password=None, expiresIn=86400, scope='internal', by_sms=True, store_session=True, mfa_code=None):
+class LoginException(Exception):
+    def __init__(self, **kwargs):
+        self.message = kwargs.pop("message", "Login Error")
+        self.data = kwargs.pop("data", {})
+        self.challenge_requested = "challenge" in self.data
+        super(LoginException, self).__init__()
+
+
+def login(username=None, password=None, expiresIn=86400, scope='internal', by_sms=True, store_session=True, mfa_code=None, get_input=True, challenge_id=None, challenge_response=None, device_token=None, session=None):
     """This function will effectivly log the user into robinhood by getting an
     authentication token and saving it to the session header. By default, it
     will store the authentication token in a pickle file and load that value
@@ -78,7 +87,12 @@ def login(username=None, password=None, expiresIn=86400, scope='internal', by_sm
     contains information on whether the access token was generated or loaded from pickle file.
 
     """
-    device_token = generate_device_token()
+
+    if not session:
+        session = Session()
+
+    if not device_token:
+        device_token = generate_device_token()
     home_dir = os.path.expanduser("~")
     data_dir = os.path.join(home_dir, ".tokens")
     if not os.path.exists(data_dir):
@@ -122,7 +136,7 @@ def login(username=None, password=None, expiresIn=86400, scope='internal', by_sm
                     payload['device_token'] = pickle_device_token
                     # Set login status to True in order to try and get account info.
                     helper.set_login_state(True)
-                    helper.update_session(
+                    helper.update_session(session,
                         'Authorization', '{0} {1}'.format(token_type, access_token))
                     # Try to load account profile to check that authorization token is still valid.
                     res = helper.request_get(
@@ -136,47 +150,57 @@ def login(username=None, password=None, expiresIn=86400, scope='internal', by_sm
                 print(
                     "ERROR: There was an issue loading pickle file. Authentication may be expired - logging in normally.")
                 helper.set_login_state(False)
-                helper.update_session('Authorization', None)
+                helper.update_session(session, 'Authorization', None)
         else:
             os.remove(pickle_path)
 
     # Try to log in normally.
-    if not username:
+    if not username and get_input:
         username = input("Robinhood username: ")
         payload['username'] = username
 
-    if not password:
+    if not password and get_input:
         password = getpass.getpass("Robinhood password: ")
         payload['password'] = password
 
-    data = helper.request_post(url, payload)
+    if challenge_id and challenge_response:
+        data = respond_to_challenge(session, challenge_id, challenge_response)
+        if 'challenge' in data:
+            raise LoginException(message=data.get("detail", "Challenge still needed"), data=data)
+        helper.update_session(session,
+            'X-ROBINHOOD-CHALLENGE-RESPONSE-ID', challenge_id)
+
+    data = helper.request_post(session, url, payload)
     # Handle case where mfa or challenge is required.
     if data:
-        if 'mfa_required' in data:
+        if 'mfa_required' in data and get_input:
             mfa_token = input("Please type in the MFA code: ")
             payload['mfa_code'] = mfa_token
-            res = helper.request_post(url, payload, jsonify_data=False)
+            res = helper.request_post(session, url, payload, jsonify_data=False)
             while (res.status_code != 200):
                 mfa_token = input(
                     "That MFA code was not correct. Please type in another MFA code: ")
                 payload['mfa_code'] = mfa_token
-                res = helper.request_post(url, payload, jsonify_data=False)
+                res = helper.request_post(session, url, payload, jsonify_data=False)
             data = res.json()
         elif 'challenge' in data:
-            challenge_id = data['challenge']['id']
-            sms_code = input('Enter Robinhood code for validation: ')
-            res = respond_to_challenge(challenge_id, sms_code)
-            while 'challenge' in res and res['challenge']['remaining_attempts'] > 0:
-                sms_code = input('That code was not correct. {0} tries remaining. Please type in another code: '.format(
-                    res['challenge']['remaining_attempts']))
-                res = respond_to_challenge(challenge_id, sms_code)
-            helper.update_session(
-                'X-ROBINHOOD-CHALLENGE-RESPONSE-ID', challenge_id)
-            data = helper.request_post(url, payload)
+            if get_input:
+                challenge_id = data['challenge']['id']
+                sms_code = input('Enter Robinhood code for validation: ')
+                res = respond_to_challenge(session, challenge_id, sms_code)
+                while 'challenge' in res and res['challenge']['remaining_attempts'] > 0:
+                    sms_code = input('That code was not correct. {0} tries remaining. Please type in another code: '.format(
+                        res['challenge']['remaining_attempts']))
+                    res = respond_to_challenge(session, challenge_id, sms_code)
+                helper.update_session(session,
+                    'X-ROBINHOOD-CHALLENGE-RESPONSE-ID', challenge_id)
+                data = helper.request_post(session, url, payload)
+            else:
+                raise LoginException(message=data['detail'], data=data)
         # Update Session data with authorization or raise exception with the information present in data.
         if 'access_token' in data:
             token = '{0} {1}'.format(data['token_type'], data['access_token'])
-            helper.update_session('Authorization', token)
+            helper.update_session(session, 'Authorization', token)
             helper.set_login_state(True)
             data['detail'] = "logged in with brand new authentication code."
             if store_session:
@@ -186,7 +210,7 @@ def login(username=None, password=None, expiresIn=86400, scope='internal', by_sm
                                  'refresh_token': data['refresh_token'],
                                  'device_token': device_token}, f)
         else:
-            raise Exception(data['detail'])
+            raise LoginException(message=data.get('detail'), data=data)
     else:
         raise Exception('Error: Trouble connecting to robinhood API. Check internet connection.')
     return(data)
